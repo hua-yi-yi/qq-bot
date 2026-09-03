@@ -110,20 +110,24 @@ https://napneko.github.io/ ；本项目在 Windows 下临时跑建议直接开�
 
 ---
 
-## 五、把项目托管到 GitHub（可选）
+## 五、把项目托管到 GitHub（已完成，本仓库已上传）
+
+> 本仓库：**https://github.com/hua-yi-yi/qq-bot**（私有）
 
 ```bash
 cd ~/Desktop/qq-chatbot
-git init
 git add .
-git commit -m "init: QQ AI chatbot (nonebot2 + onebot v11)"
-# 在 GitHub 网页新建空仓库后（不要勾选生成 README）：
-git remote add origin https://github.com/你的用户名/仓库名.git
-git branch -M main
-git push -u origin main
+git commit -m "更新说明"
+git push            # 推送（远程已配置为 SSH 443 通道）
 ```
 
-> `.gitignore` 已排除 `.env`，密钥不会上传。以后换机器：`git clone` + 复制一份 `.env` 即可。
+> ⚠️ 本机 hosts 有 GitHub 屏蔽，必须用 SSH 443 通道。**换新机器克隆**：
+> ```bash
+> git clone ssh://git@ssh.github.com:443/hua-yi-yi/qq-bot.git
+> cp .env.example .env   # 新建并填入自己的 API Key
+> ```
+
+> `.gitignore` 已排除 `.env`，密钥不会上传。`git push` 用本机 `~/.ssh/id_ed25519` 私钥认证（别把私钥拷给别人）。
 
 ---
 
