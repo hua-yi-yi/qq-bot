@@ -1,0 +1,13 @@
+# 密钥文件绝不上传
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+
+# 日志/临时
+logs/
+*.log
+.DS_Store
