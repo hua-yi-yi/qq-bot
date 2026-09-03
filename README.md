@@ -1,142 +1,173 @@
 # QQ AI 聊天机器人（NoneBot2 + NapCat + 大模型）
 
-架构一览：
+基于 **NoneBot2 + NapCat(OneBot V11) + OpenAI 兼容大模型** 的 QQ 聊天机器人。
+私聊自动回复、群聊 @/触发词 回复、多轮上下文记忆、插件式扩展。
 
 ```
-你的手机QQ小号 ──登录──> [NapCat Shell (Windows)]  ──OneBot反向WS──> [NoneBot2 (WSL2/Linux)] ──OpenAI兼容API──> [DeepSeek / OpenAI / 其他]
+📱 手机 QQ 小号 ──登录──> [NapCat Shell (Windows 无头)] ──OneBot反向WS──> [NoneBot2 (WSL2)] ──LLM API──> [DeepSeek / 硅基流动 / 其他]
 ```
 
-- **NapCat**：跑在 **Windows**，负责用你的 QQ 小号登录并把收发消息转成标准 OneBot 协议
-- **NoneBot2**：跑在 **WSL2**（本项目位置），机器人框架，收到消息后调用大模型并回复
-- 两者通过 WebSocket 连接：NapCat 主动连 `ws://127.0.0.1:8080/onebot/v11/ws`（Windows 的 127.0.0.1:8080 会自动转发进 WSL2，无需额外配网络）
+- **NapCat**：Windows 侧，用小号登录 QQ，把收发消息转成标准 OneBot 协议
+- **NoneBot2**：WSL2/Linux 侧，机器人框架，处理消息、调用大模型并发回
+- 连接方式：NapCat 主动连 `ws://127.0.0.1:8080/onebot/v11/ws`（Windows→WSL2 的 localhost 转发，无需配网络）
+
+## ✨ 功能特性
+
+- 💬 私聊：任何文字消息自动回复
+- 👥 群聊：被 @ 时回复（并 @ 回你）；消息以触发词开头（默认 `AI`）也回复；纯 @ 无内容自动忽略
+- 🧠 每个会话（人 / 群+人）独立记住最近 8 轮上下文
+- 🚦 防刷屏：同一条会话上一条未回完时忽略新消息
+- 🔄 `/清空记忆`（或 `/clear`、`/reset`、`/新对话`）重置上下文
+- 🎭 人设可改（插件内 `SYSTEM_PROMPT`）· 触发词可配（`.env` `GROUP_TRIGGERS`）
 
 ---
 
-## 一、机器人侧（本项目，已在 WSL2 就绪）
+## 一、机器人侧（WSL2/Linux）
 
 ```bash
-conda activate qqbot
-cd ~/Desktop/qq-chatbot        # 项目根目录
-pip install -r requirements.txt  # 首次运行前装一次依赖
+conda activate qqbot            # 或任意 Python 3.11+ 环境
+cd ~/Desktop/qq-chatbot
+pip install -r requirements.txt # 首次装依赖
 ```
 
-1. 编辑 **`.env`**，把 `LLM_API_KEY` 换成你的真实 Key（其余默认即可）
-   - 默认已配**硅基流动免费模型**：注册 [SiliconFlow](https://cloud.siliconflow.cn)（手机号即可、不充值）→
-     控制台「API 密钥」页创建 Key 粘贴进去即可；免费模型有限速但个人聊天够用
-   - 想要效果更强的：注册 [DeepSeek 开放平台](https://platform.deepseek.com) 充 10 元，
-     把 `.env` 里 `LLM_BASE_URL=https://api.deepseek.com/v1`、`LLM_MODEL=deepseek-chat`
-   - 换模型前可用下面命令先验证 Key 和模型 id（不用等 QQ）：
-     ```bash
-     curl https://api.siliconflow.cn/v1/chat/completions \
-       -H "Authorization: Bearer 你的Key" -H "Content-Type: application/json" \
-       -d '{"model":"Qwen/Qwen2.5-7B-Instruct","messages":[{"role":"user","content":"你好"}]}'
-     ```
-     返回内容即成功；报"模型不存在"就去控制台「模型广场」找一个标【免费】的模型 id 替换
-2. 启动机器人（**先启动它**，NapCat 才能连上来）：
+### 1. 配置大模型（编辑 `.env`）
+
+```ini
+LLM_API_KEY=你的Key
+LLM_BASE_URL=https://api.siliconflow.cn/v1
+LLM_MODEL=deepseek-ai/DeepSeek-V4-Flash
+```
+
+**方案选择（三选一）**：
+
+| 方案 | 说明 | 备注 |
+|------|------|------|
+| ① 硅基流动（默认） | [cloud.siliconflow.cn](https://cloud.siliconflow.cn) 注册，送体验金；`DeepSeek-V4-Flash` 又快又便宜 | 体验金用完需充值（10 元够用很久） |
+| ② 阿里云百炼（免费额度） | [bailian.console.aliyun.com](https://bailian.console.aliyun.com) 新用户可领约 7000 万 token；`LLM_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1` | 免费，量大，需实名 |
+| ③ DeepSeek 官方 | [platform.deepseek.com](https://platform.deepseek.com)，`LLM_BASE_URL=https://api.deepseek.com/v1`、`LLM_MODEL=deepseek-chat` | 充值 10 元起 |
+
+> ⚠️ 2026 年起硅基流动已取消"永久免费模型"档，所有模型都需余额；免费首选**阿里云百炼**。
+
+**验证 Key（不用等 QQ）**：
+```bash
+curl https://api.siliconflow.cn/v1/chat/completions \
+  -H "Authorization: Bearer 你的Key" -H "Content-Type: application/json" \
+  -d '{"model":"deepseek-ai/DeepSeek-V4-Flash","messages":[{"role":"user","content":"你好"}],"max_tokens":50}'
+```
+返回 JSON 内容即成功；报 402「balance is insufficient」= 余额不足，充值或换方案。
+
+### 2. 启动机器人（先启动它，NapCat 才能连上）
 
 ```bash
 python bot.py
 ```
 
-看到日志里出现 `OneBot V11 ... WebSocket` / 监听 8080 之类的字样即成功。
-此时 Windows 的 `http://127.0.0.1:8080/onebot/v11/ws` 应该可以连上（可由 NapCat 验证）。
+看到 `OneBot V11 ... WebSocket` 监听 8080、以及后续 `Bot <QQ号> connected` 即成功。
 
 ---
 
-## 二、NapCat 侧（在 Windows 上操作）
+## 二、NapCat 侧（Windows）
 
-> 需要 **Windows 10/11 x64**。建议用**小号**，第三方协议有一定封号风险。
+> 需要 **Windows 10/11 x64** + 已安装 **QQ 桌面版（9.9.15+）**。建议用**小号**（第三方协议有封号风险）。
 
-1. 下载一键包：https://github.com/NapNeko/NapCatQQ/releases/latest
-   → 下载 **`NapCat.Shell.Windows.OneKey.zip`**
-2. 解压到**不含空格和中文**的路径，例如 `D:\NapCat\`（官方强调这点，否则可能启动失败）
-3. 双击运行 **`NapCatInstaller.exe`**，等待它自动化部署（会联网准备 QQ 运行环境，稍等片刻）
-4. 进入部署生成的 `NapCat.XXXX.Framework` 目录，双击运行 **`NapCatWinBootMain.exe`**
-5. QQ 登录窗口出现 → 用**你的小号手机 QQ** 扫码登录（提示 QQ 损坏/频繁弹窗时，装
-   [LiteLoaderQQNT-Kill-Update](https://github.com/Mzdyl/LiteLoaderQQNT-Plugin-Loader/issues) 相关插件，见下方 FAQ）
-6. 登录成功后控制台会打印 **WebUI 地址和随机密码**，浏览器打开（默认 `http://127.0.0.1:6099/webui`）登录
+### 安装（官方推荐：Shell 手动启动）
 
-### 配置 OneBot 反向 WebSocket（让 NapCat 连上 NoneBot）
+1. 下载 **`NapCat.Shell.zip`**：https://github.com/NapNeko/NapCatQQ/releases/latest
+2. 解压到**不含空格/中文**的路径（如 `D:\NapCat\Shell`）
+3. 双击 **`launcher.bat`** 启动（会请求管理员权限，UAC 点"是"；
+   Win10 用 `launcher-win10.bat`；自动从注册表找到 QQ 安装路径）
+4. 首次登录：Shell 无头模式**不弹 QQ 窗口**，二维码在 `cache/qrcode.png`；
+   也可浏览器打开 **`http://127.0.0.1:6099/webui`**（登录令牌看控制台输出或 `config/webui.json` 的 `token` 字段）扫码
+5. **手机 QQ（小号）扫码** → 登录成功
+6. 之后每次启动自动登录（快速登录：`launcher.bat 你的QQ号`）
 
-在 NapCat WebUI 里：
+> 无头模式控制台看不到就查日志：`Shell/logs/` 下的 `.log` 文件。
 
-1. 进入 **网络配置（Network）**
-2. 新建一个 **WebSocket 客户端（WS Client / 反向 WS）**
-3. 设置：
-   - 上报地址 / URL：`ws://127.0.0.1:8080/onebot/v11/ws`
-   - 消息格式：`Array`（数组）
-   - 访问令牌：**留空**（两侧都要为空，保持一致）
-4. 保存后 NapCat 会自动重连。若显示连接成功 → 大功告成！
+### 配置 OneBot 反向 WebSocket（连接机器人）
 
-> 若连不上，看下文 FAQ「连不上 8080」。
+**方法 A：直接改配置文件**（推荐，部署脚本已这么做）：
+编辑 `Shell/config/onebot11_你的QQ号.json`：
+```json
+{
+  "network": {
+    "websocketClients": [
+      {
+        "name": "NoneBot",
+        "enable": true,
+        "url": "ws://127.0.0.1:8080/onebot/v11/ws",
+        "messagePostFormat": "array",
+        "token": ""
+      }
+    ]
+  }
+}
+```
+重启 NapCat（关掉 QQ 进程后重新运行 launcher.bat）生效。
+
+**方法 B：WebUI 点击**：网络配置 → 新建 WebSocket 客户端 → 地址 `ws://127.0.0.1:8080/onebot/v11/ws`、消息格式 Array、令牌留空。
+
+> 连不上的话：确认 WSL2 里 `python bot.py` 在跑；或把地址换成 WSL2 IP（`hostname -I` 查看），
+> 且 `.env` 里 `HOST=0.0.0.0`（已默认）。
 
 ---
 
 ## 三、测试
 
-1. 用另一个 QQ 号给机器人小号发一句 **"你好"** → 应收到大模型回复
-2. 把机器人小号拉进群，群里 **@它** 说话 → 回复并 @ 你
-3. 群里不 @，发 **"AI 今天天气怎么样"** → 也会回复（触发词可在 .env 的 `GROUP_TRIGGERS` 改）
-4. 发送 **/清空记忆** 可重置上下文
+1. 另一个 QQ 私聊小号发 **"你好"** → 收到 AI 回复
+2. 群里 **@机器人** → 回复并 @ 你
+3. 群里发 **"AI 今天天气怎么样"**（不 @）→ 也会回复
+4. 发 **/清空记忆** → 重置上下文
 
 ---
 
 ## 四、常见问题 FAQ
 
-**Q1: NapCat 连不上 ws://127.0.0.1:8080**
-先确认 WSL2 里 `python bot.py` 正在运行。
-如果仍不行，可能是 Windows→WSL2 的 localhost 转发未开，改用 WSL2 的 IP：
-在 WSL2 里执行 `hostname -I`（如 `172.22.x.x`），把 NapCat 地址改成
-`ws://172.22.x.x:8080/onebot/v11/ws`（注意 .env 里 `HOST=0.0.0.0` 已保证可被外部连入；
-若是该模式需在 Windows 防火墙放行对应端口）。
+**Q1: 机器人回复"调用大模型出错啦：…402…balance is insufficient"**
+大模型余额不足。硅基流动充值 10 元，或换[阿里云百炼免费额度](https://bailian.console.aliyun.com)（改 `.env` 三行）。
 
-**Q2: 提示 QQ 文件损坏 / 频繁弹窗**
-安装插件 [LiteLoaderQQNT-Kill-Update](https://github.com/Mzdyl/LiteLoaderQQNT-Plugin-Loader)，或在 NapCat 交流群求助。
+**Q2: 回复很慢（20 秒以上）**
+用了排队严重的免费/低优先级模型。换 `deepseek-ai/DeepSeek-V4-Flash`（默认，约 1 秒）或百炼的 `qwen-turbo`。
 
-**Q3: 缺 DLL / 运行库**
-安装微软运行库：https://aka.ms/vs/17/release/vc_redist.x64.exe
+**Q3: NapCat 连不上 ws://127.0.0.1:8080**
+① 确认 `python bot.py` 在跑；② Windows→WSL2 localhost 转发未开时，改连 `ws://<WSL2-IP>:8080/onebot/v11/ws`。
 
-**Q4: 机器人回复报错「401/鉴权失败」**
-`.env` 里 `LLM_API_KEY` 填错或平台余额不足；`LLM_BASE_URL`/`LLM_MODEL` 与平台不匹配。
+**Q4: QQ 提示损坏 / 缺 DLL**
+装微软运行库 https://aka.ms/vs/17/release/vc_redist.x64.exe ；QQ 版本过低则升级 QQ。
 
-**Q5: 机器人没反应**
-① 私聊没反应：NapCat 是否已登录且 WS 显示已连接；
-② 群聊没反应：需要 @机器人 或 触发词开头（见 `.env` 的 `GROUP_TRIGGERS`）；
-③ 看 bot.py 所在终端日志有没有报错。
+**Q5: 群聊里机器人没反应**
+需要 @它 或消息以触发词（默认 `AI`）开头；`GROUP_TRIGGERS` 可改。
 
-**Q6: 如何开机自启 / 长期运行**
-以后部署到云服务器（Linux）可把 NapCat 换成 Docker 版、NoneBot 用 systemd/supervisor 守护，教程见
-https://napneko.github.io/ ；本项目在 Windows 下临时跑建议直接开两个终端。
+**Q6: 想长期 7×24 运行**
+把 NapCat 换成 Docker 版、NoneBot 用 systemd 守护，部署到云服务器（见 https://napneko.github.io/ ）。
 
 ---
 
-## 五、把项目托管到 GitHub（已完成，本仓库已上传）
+## 五、GitHub 托管（本仓库）
 
-> 本仓库：**https://github.com/hua-yi-yi/qq-bot**（私有）
+> 仓库：**https://github.com/hua-yi-yi/qq-bot**（私有）· 推送走 SSH 443 通道
 
 ```bash
-cd ~/Desktop/qq-chatbot
-git add .
-git commit -m "更新说明"
-git push            # 推送（远程已配置为 SSH 443 通道）
+git add . && git commit -m "更新说明" && git push
+# 换新机器克隆：
+git clone ssh://git@ssh.github.com:443/hua-yi-yi/qq-bot.git
+cp .env.example .env   # 新建配置并填自己的 Key
 ```
 
-> ⚠️ 本机 hosts 有 GitHub 屏蔽，必须用 SSH 443 通道。**换新机器克隆**：
-> ```bash
-> git clone ssh://git@ssh.github.com:443/hua-yi-yi/qq-bot.git
-> cp .env.example .env   # 新建并填入自己的 API Key
-> ```
-
-> `.gitignore` 已排除 `.env`，密钥不会上传。`git push` 用本机 `~/.ssh/id_ed25519` 私钥认证（别把私钥拷给别人）。
+> ⚠️ 本机 hosts 屏蔽了 GitHub，必须用 SSH 443；`.gitignore` 已排除 `.env`，密钥不会上传。
 
 ---
 
-## 六、扩展方向
+## 六、项目结构 & 扩展
 
-- 插件生态：nonebot2 有海量现成插件（搜 `nonebot-plugin`），放一个文件夹进 `src/plugins/` 即生效
-- 换模型/加人设：改 `.env` 与插件里的 `SYSTEM_PROMPT`
-- 多账号：NapCat 支持多开，配多个 WS 客户端连不同端口
-- 本项目结构：
-  - `bot.py` — 入口
-  - `.env` — 全部配置（密钥在这里）
-  - `src/plugins/qqchat/` — 聊天插件本体
+```
+qq-chatbot/
+├── bot.py                     # 入口：注册 OneBot V11 适配器 + 加载插件
+├── .env                       # 全部配置（密钥，不上传）
+├── .env.example               # 配置模板
+├── requirements.txt
+└── src/plugins/qqchat/        # 聊天插件（私聊/群聊/记忆/重置）
+```
+
+- **加功能**：nonebot2 插件生态，搜索 `nonebot-plugin`，一个文件夹放 `src/plugins/` 即生效
+- **改人设**：插件内 `SYSTEM_PROMPT`
+- **多账号**：NapCat 多开 + 多个 WS 客户端连不同端口
