@@ -145,12 +145,13 @@ python bot.py
 
 ## 五、GitHub 托管（本仓库）
 
-> 仓库：**https://github.com/hua-yi-yi/qq-bot**（私有）· 推送走 SSH 443 通道
+> 仓库：**https://github.com/hua-yi-yi/qq-bot**（公开 · MIT 许可）· 推送走 SSH 443 通道
 
 ```bash
 git add . && git commit -m "更新说明" && git push
-# 换新机器克隆：
-git clone ssh://git@ssh.github.com:443/hua-yi-yi/qq-bot.git
+# 换新机器克隆（公开仓库，二选一）：
+git clone https://github.com/hua-yi-yi/qq-bot.git            # 通用方式
+git clone ssh://git@ssh.github.com:443/hua-yi-yi/qq-bot.git  # 本机 GitHub 被墙时走 SSH 443
 cp .env.example .env   # 新建配置并填自己的 Key
 ```
 
