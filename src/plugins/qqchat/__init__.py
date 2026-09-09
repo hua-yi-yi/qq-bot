@@ -2,12 +2,14 @@
 
 行为：
 - 私聊：任何文字消息都会回复
-- 群聊：被 @ 时回复；或消息以触发词开头（默认 "AI"）时回复
+- 群聊：被 @ 时必定回复；不 @ 时以触发词开头（默认 "AI"）也只是按概率插话（.env GROUP_REPLY_PROB）
 - 每条会话（私聊=人，群聊=人+群）保留最近若干轮上下文记忆
 - 发送 /清空记忆（或 /clear /reset /新对话）可重置当前会话记忆
+- 关键词自动回复：命中 replies.json 里的规则时直接回固定内容（文字/图片），不调用大模型
 """
 import asyncio
 import json
+import random
 from collections import deque
 from pathlib import Path
 
@@ -36,6 +38,13 @@ TRIGGERS = [
     for t in str(getattr(_conf, "group_triggers", "AI") or "").split(",")
     if t.strip()
 ]
+
+# 群聊里「不 @ 机器人」时的插话概率（0~1）：1=每条都回，0=从不主动插话
+try:
+    GROUP_REPLY_PROB = float(getattr(_conf, "group_reply_prob", 0.05))
+except (TypeError, ValueError):
+    GROUP_REPLY_PROB = 0.05
+GROUP_REPLY_PROB = min(max(GROUP_REPLY_PROB, 0.0), 1.0)
 
 # 判定 Key 是否真实可用（排除 .env 里的占位符）
 _KEY_INVALID = not API_KEY or (
@@ -84,10 +93,20 @@ def _chat_rule(ev: MessageEvent) -> bool:
     if isinstance(ev, PrivateMessageEvent):
         return True  # 私聊全接
     if isinstance(ev, GroupMessageEvent):
-        if ev.to_me:  # 被 @
+        if ev.to_me:  # 被 @：必定回复
             return True
         low = _plain_text(ev).lower()
-        return any(low.startswith(tg) for tg in TRIGGERS)
+        if not any(low.startswith(tg) for tg in TRIGGERS):
+            return False
+        # 不 @ 时按概率插话：命中触发词也只是"有机会"回，避免群里刷屏
+        roll = random.random()
+        if roll >= GROUP_REPLY_PROB:
+            logger.debug(
+                f"群聊插话跳过：roll={roll:.3f} >= prob={GROUP_REPLY_PROB:.3f}"
+            )
+            return False
+        logger.debug(f"群聊插话命中：roll={roll:.3f} < prob={GROUP_REPLY_PROB:.3f}")
+        return True
     return False
 
 
