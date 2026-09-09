@@ -1,5 +1,7 @@
 # 密钥文件绝不上传
 .env
+.env.*
+!.env.example
 
 # Python
 __pycache__/
