@@ -7,7 +7,9 @@
 - 发送 /清空记忆（或 /clear /reset /新对话）可重置当前会话记忆
 """
 import asyncio
+import json
 from collections import deque
+from pathlib import Path
 
 from nonebot import get_driver, on_command, on_message
 from nonebot.adapters.onebot.v11 import (
@@ -170,3 +172,123 @@ async def handle_reset(bot: Bot, ev: MessageEvent):
     if _histories.pop(sid, None) is not None:
         await reset_cmd.finish("好的，我已忘记之前的对话，我们重新开始吧～")
     await reset_cmd.finish("本来就没有记住什么呀，直接开始聊吧～")
+
+
+# ------------------------------------------------------------------ 关键词自动回复
+# 配置在同目录 replies.json，改完保存立即生效（热重载，无需重启机器人）
+_REPLY_FILE = Path(__file__).parent / "replies.json"
+_reply_cache: dict = {"mtime": None, "rules": [], "enabled": True}
+
+
+def _load_reply_rules() -> None:
+    """按需加载 replies.json：文件 mtime 变化时才重新读取。"""
+    try:
+        st = _REPLY_FILE.stat()
+    except OSError:
+        if _reply_cache["rules"]:
+            logger.warning("replies.json 不存在，关键词回复已停用")
+            _reply_cache.update({"mtime": None, "rules": [], "enabled": True})
+        return
+
+    if _reply_cache["mtime"] == st.st_mtime:
+        return  # 没变，用缓存
+
+    try:
+        data = json.loads(_REPLY_FILE.read_text(encoding="utf-8"))
+        rules = data.get("rules") or []
+        if not isinstance(rules, list):
+            raise ValueError("rules 字段必须是数组")
+        _reply_cache.update({
+            "mtime": st.st_mtime,
+            "rules": [r for r in rules if isinstance(r, dict)],
+            "enabled": bool(data.get("enabled", True)),
+        })
+        logger.info(
+            f"关键词回复规则已加载：{len(_reply_cache['rules'])} 条"
+            f"（全局开关 {'开' if _reply_cache['enabled'] else '关'}）"
+        )
+    except Exception as e:
+        logger.error(f"replies.json 解析失败，继续沿用上一版规则：{e}")
+        _reply_cache["mtime"] = st.st_mtime  # 避免同一条错误反复刷屏
+
+
+def _match_reply(ev: MessageEvent) -> dict | None:
+    """按顺序匹配规则，返回命中的规则字典；未命中返回 None。"""
+    _load_reply_rules()
+    if not _reply_cache["enabled"]:
+        return None
+
+    text = _plain_text(ev)
+    if not text:
+        return None
+
+    is_private = isinstance(ev, PrivateMessageEvent)
+    low = text.lower()
+
+    for rule in _reply_cache["rules"]:
+        if not rule.get("enabled", True):
+            continue
+        # 作用范围：all / private / group
+        scope = str(rule.get("scope", "all")).lower()
+        if scope == "private" and not is_private:
+            continue
+        if scope == "group" and is_private:
+            continue
+        # 群聊可选：必须 @ 机器人才触发
+        if not is_private and rule.get("require_at") and not getattr(ev, "to_me", False):
+            continue
+        # 关键词：命中任意一个即可（包含匹配）
+        keywords = rule.get("keywords")
+        if isinstance(keywords, str):
+            keywords = [keywords]
+        if not keywords:
+            continue
+        ignore_case = bool(rule.get("ignore_case", True))
+        haystack = low if ignore_case else text
+        for kw in keywords:
+            needle = str(kw).lower() if ignore_case else str(kw)
+            if needle and needle in haystack:
+                return rule
+    return None
+
+
+def _keyword_rule(ev: MessageEvent) -> bool:
+    """规则函数：命中才让本 matcher 运行，否则完全放行给后面的 AI 聊天。"""
+    return _match_reply(ev) is not None
+
+
+def _image_file(value: str) -> str:
+    """图片参数归一化：URL / base64 原样透传，本地路径转成 file:/// 形式。"""
+    v = value.strip()
+    if v.startswith(("http://", "https://", "file://", "base64://", "data:")):
+        return v
+    if len(v) > 2 and v[1] == ":":  # Windows 盘符，如 D:\pics\a.png
+        return "file:///" + v.replace("\\", "/")
+    return v
+
+
+# priority=5 < 聊天插件的 10，所以先于大模型处理；block=True 命中后不再调 AI
+keyword_reply = on_message(rule=_keyword_rule, priority=5, block=True)
+
+
+@keyword_reply.handle()
+async def handle_keyword(ev: MessageEvent):
+    rule = _match_reply(ev)
+    if not rule:
+        return
+
+    segments: list[MessageSegment] = []
+    if isinstance(ev, GroupMessageEvent) and rule.get("at_sender"):
+        segments += [MessageSegment.at(ev.user_id), MessageSegment.text(" ")]
+
+    reply = str(rule.get("reply", "")).strip()
+    if reply:
+        segments.append(MessageSegment.text(reply))
+
+    image = str(rule.get("image", "")).strip()
+    if image:
+        segments.append(MessageSegment.image(_image_file(image)))
+
+    if not segments:
+        return
+    await keyword_reply.finish(Message(segments))

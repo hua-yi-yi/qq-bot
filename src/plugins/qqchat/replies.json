@@ -1,0 +1,50 @@
+{
+  "_说明": "关键词自动回复配置。改完保存立即生效（热重载），无需重启机器人。",
+  "_字段": {
+    "enabled": "总开关；false 时全部规则不生效",
+    "rules[].name": "规则名，仅用于日志识别",
+    "rules[].enabled": "单条规则开关，false 可临时停用",
+    "rules[].keywords": "关键词数组；消息文本里包含任意一个即命中（默认不区分大小写）",
+    "rules[].reply": "命中后回复的文字（可选；与 image 至少填一个）",
+    "rules[].image": "命中后发送的图片（可选）。支持三种写法：① 网络地址 https://... ② 本地文件 D:\\NapCat\\images\\a.png 或 file:///D:/NapCat/images/a.png ③ base64://<数据>",
+    "rules[].scope": "作用范围：all=私聊+群聊 / private=仅私聊 / group=仅群聊",
+    "rules[].require_at": "仅群聊有效；true 表示必须 @ 机器人才触发",
+    "rules[].at_sender": "仅群聊有效；true 表示回复时顺带 @ 发送者",
+    "rules[].ignore_case": "是否忽略大小写，默认 true"
+  },
+  "_图片提示": "本地图片要放在 NapCat 所在机器（Windows）能读到的路径下，推荐 D:\\NapCat\\images\\；文字和图片可以同时填，会先发文字再发图。",
+  "enabled": true,
+  "rules": [
+    {
+      "name": "示例-纯文字",
+      "enabled": false,
+      "keywords": ["你好", "在吗", "有人吗"],
+      "reply": "你好呀～我是小Q，有什么可以帮你的吗？",
+      "scope": "all",
+      "require_at": false,
+      "at_sender": false,
+      "ignore_case": true
+    },
+    {
+      "name": "示例-纯图片",
+      "enabled": false,
+      "keywords": ["菜单", "价格表"],
+      "image": "file:///D:/NapCat/images/menu.png",
+      "scope": "all",
+      "require_at": false,
+      "at_sender": false,
+      "ignore_case": true
+    },
+    {
+      "name": "示例-文字加图片",
+      "enabled": false,
+      "keywords": ["怎么走"],
+      "reply": "这是路线图，看着走～",
+      "image": "https://example.com/map.png",
+      "scope": "group",
+      "require_at": true,
+      "at_sender": true,
+      "ignore_case": true
+    }
+  ]
+}

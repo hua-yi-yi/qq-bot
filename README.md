@@ -19,6 +19,7 @@
 - 🚦 防刷屏：同一条会话上一条未回完时忽略新消息
 - 🔄 `/清空记忆`（或 `/clear`、`/reset`、`/新对话`）重置上下文
 - 🎭 人设可改（插件内 `SYSTEM_PROMPT`）· 触发词可配（`.env` `GROUP_TRIGGERS`）
+- 🎯 关键词自动回复：命中关键词直接回固定内容（**文字/图片**），不调用大模型 · 配置在 `src/plugins/qqchat/replies.json`，改完保存即生效
 
 ---
 
@@ -166,8 +167,51 @@ qq-chatbot/
 ├── .env.example               # 配置模板
 ├── requirements.txt
 └── src/plugins/qqchat/        # 聊天插件（私聊/群聊/记忆/重置）
+    ├── __init__.py            # 聊天逻辑 + 关键词自动回复层
+    └── replies.json           # 关键词自动回复规则（改完即生效，无需重启）
 ```
 
 - **加功能**：nonebot2 插件生态，搜索 `nonebot-plugin`，一个文件夹放 `src/plugins/` 即生效
 - **改人设**：插件内 `SYSTEM_PROMPT`
 - **多账号**：NapCat 多开 + 多个 WS 客户端连不同端口
+
+---
+
+## 七、关键词自动回复（文字 / 图片）
+
+检测到消息里**包含**指定关键词时，直接回复固定内容，**不调用大模型**（毫秒级、省 token）；没命中才走 AI 聊天。
+
+配置在 `src/plugins/qqchat/replies.json`，**改完保存立即生效**（热重载，无需重启 `python bot.py`）。
+
+```json
+{
+  "enabled": true,
+  "rules": [
+    {
+      "name": "菜单",
+      "enabled": true,
+      "keywords": ["菜单", "价格表"],
+      "reply": "这是最新菜单～",
+      "image": "D:\\NapCat\\images\\menu.png",
+      "scope": "all",
+      "require_at": false,
+      "at_sender": false,
+      "ignore_case": true
+    }
+  ]
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `keywords` | 关键词数组，消息文本**包含**任意一个即命中（默认忽略大小写） |
+| `reply` | 回复的文字（可选，与 `image` 至少填一个） |
+| `image` | 回复的图片（可选）。支持 ① 本地文件 `D:\NapCat\images\a.png` ② 网络地址 `https://...` ③ `base64://...` |
+| `scope` | `all` 私聊+群聊 / `private` 仅私聊 / `group` 仅群聊 |
+| `require_at` | 仅群聊；`true` 表示必须 @ 机器人才触发 |
+| `at_sender` | 仅群聊；`true` 表示回复时顺带 @ 发送者 |
+| `enabled` | 总开关或单条规则开关，`false` 临时停用 |
+
+> ⚠️ 本地图片必须放在 **NapCat（Windows 侧）能读到的路径**，推荐统一放 `D:\NapCat\images\`；放 WSL 的 `/home/chen/...` 里 NapCat 读不到。
+> 规则按数组顺序匹配，**第一条命中即回复并结束**，不会继续走 AI。
+> 文字与图片可同时填，会拼成一条消息（先文字后图片）。
