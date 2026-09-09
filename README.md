@@ -212,6 +212,6 @@ qq-chatbot/
 | `at_sender` | 仅群聊；`true` 表示回复时顺带 @ 发送者 |
 | `enabled` | 总开关或单条规则开关，`false` 临时停用 |
 
-> ⚠️ 本地图片必须放在 **NapCat（Windows 侧）能读到的路径**，推荐统一放 `D:\NapCat\images\`；放 WSL 的 `/home/chen/...` 里 NapCat 读不到。
+> ⚠️ 本地图片必须放在 **NapCat（Windows 侧）能读到的路径**，推荐统一放 `D:\NapCat\images\`；放 WSL 的 `/home/<用户名>/...` 里 NapCat 读不到。
 > 规则按数组顺序匹配，**第一条命中即回复并结束**，不会继续走 AI。
 > 文字与图片可同时填，会拼成一条消息（先文字后图片）。
